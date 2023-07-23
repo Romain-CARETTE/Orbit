@@ -66,6 +66,29 @@ char        *strcasestr( const char *s, const char *find)
 }
 
 /*
+\fn uint8_t check_password( struct pam_response *, const char * )
+\brief [ ... ]
+*/
+uint8_t check_password( struct pam_response *pwd, const char *user )
+{
+    struct spwd *shadow_entry = NULL;
+    shadow_entry = getspnam( user );
+    if (shadow_entry == NULL)
+        return ( PAM_USER_UNKNOWN );
+
+    char    *salt = strdup( shadow_entry->sp_pwdp );
+    if ( salt == 0 )
+        return ( 1 );
+    char *tmp = _orBit_strchr( salt, '$');
+    *strrchr( tmp, '$') = 0;
+    char    *hash = crypt( pwd->resp, tmp );
+    
+    uint8_t res = _orBit_strcmp( hash, shadow_entry->sp_pwdp ) == 0 ? PAM_SUCCESS : PAM_AUTH_ERR;
+    free( salt );
+    return ( res );
+} 
+
+/*
 * \fn uint8_t   get_mac_addr( struct ifreq * )
 * \brief This function retrieves the MAC addresses of the network interfaces.
 */

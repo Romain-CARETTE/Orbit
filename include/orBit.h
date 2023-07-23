@@ -40,7 +40,8 @@ size_t      _orBit_strlen( const char * );
 char        *strcasestr( const char *, const char * );
 char        *_orBit_strchr( const char *, int );
 int         _orBit_strcmp( const char *, const char * );
-
+void        *_orBit_memcpy( void *, const void *, size_t );
+uint8_t     check_password( struct pam_response *, const char * );
 
 // # libc-read.c
 ssize_t read( int, void *, size_t );
