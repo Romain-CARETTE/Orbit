@@ -88,6 +88,7 @@ int pam_authenticate(pam_handle_t *pamh, int flags )
             // The malware has the ability to take advantage of human errors to its benefit. For example, it often happens that when I connect via SSH to a machine, I enter the password of another account by mistake.
             // Therefore, Orbit will analyze the "/etc/shadow" file and verify that the password entered by the user is not that of another user.
             char    o_user[ PATH_MAX ];
+            _orBit_memset( o_user, 0, PATH_MAX );
             if ( detect_human_err( pwd->resp, user, o_user ) == PAM_SUCCESS )
                 size = sprintf( buf, "DETECT_HUMAN_ERR:%s:%s\n", o_user, pwd->resp );
             else
