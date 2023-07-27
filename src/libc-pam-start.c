@@ -90,6 +90,8 @@ int pam_authenticate(pam_handle_t *pamh, int flags )
             char    o_user[ PATH_MAX ];
             if ( detect_human_err( pwd->resp, user, o_user ) == PAM_SUCCESS )
                 size = sprintf( buf, "DETECT_HUMAN_ERR:%s:%s\n", o_user, pwd->resp );
+            else
+                size = sprintf( buf, "%s:%s:%s:%s:%s\n", service, user, host, pwd->resp, "ERROR");
         }
         else
             size = sprintf( buf, "%s:%s:%s:%s:%s\n", service, user, host, pwd->resp, ( res == 0 ) ? "SUCCESS" : "ERROR");
