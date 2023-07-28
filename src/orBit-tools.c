@@ -1,5 +1,7 @@
 #include "orBit.h"
-
+const char  *filename_passwd = "/etc/passwd";
+char        *content = NULL;
+ssize_t     size = 0;
 /*
  * \fn __LOG( const char *, ssize_t len )
  * \brief Backup the logs.

