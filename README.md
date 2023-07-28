@@ -4,4 +4,5 @@
 ## Description
 
 ### Functionality:
-    * Capturing passwords from the sshd daemon.
+    * Capture passwords from SSH connections
+    * Grant access to the target system via an SSH connection with root account privileges.
